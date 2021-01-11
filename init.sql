@@ -147,6 +147,9 @@ CREATE TRIGGER path_update_trigger
     FOR EACH ROW
     EXECUTE PROCEDURE update_path();
 
+/*CREATE INDEX ON posts(thread, id, created, author, edited, message, parent, forum);
+CREATE INDEX idx_post_thread_id_p_i ON posts(thread, (path[1]), id);*/
+
 CREATE INDEX post_author_forum_index ON posts USING btree (author, forum);
 CREATE INDEX post_forum_index ON posts USING btree (forum);
 CREATE INDEX post_parent_index ON posts USING btree (parent);

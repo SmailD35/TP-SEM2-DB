@@ -27,7 +27,7 @@ func main()  {
 	db, err := pgx.NewConnPool(
 		pgx.ConnPoolConfig{
 			ConnConfig:     config,
-			MaxConnections: 2000,
+			MaxConnections: 256,
 		})
 
 	if err != nil {
