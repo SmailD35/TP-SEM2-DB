@@ -1,12 +1,12 @@
 package forumHandler
 
 import (
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx"
-	"github.com/labstack/echo"
 	"github.com/SmailD35/TP-SEM2-DB/internal/models"
 	"github.com/SmailD35/TP-SEM2-DB/internal/storages/forum"
 	"github.com/SmailD35/TP-SEM2-DB/internal/storages/profile"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx"
+	"github.com/labstack/echo"
 	"math"
 	"net/http"
 	"net/url"
@@ -129,17 +129,18 @@ func (h *handler) ForumUsersGet(c echo.Context) error {
 		return err
 	}
 
-	forumID, err := h.forumStorage.ForumIDSelect(slug)
+	_, err = h.forumStorage.ForumIDSelect(slug)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return c.JSON(models.NotFound, models.Error{})
 		}
-		return c.JSON(models.InternalServerError, models.Error{})	}
+		return c.JSON(models.InternalServerError, models.Error{})
+	}
 
 	if params.Limit == 0 {
 		params.Limit = 10000
 	}
-	users, err :=  h.userStorage.SelectAllUsers(params, forumID)
+	users, err :=  h.userStorage.SelectAllUsers(params, slug)
 	if err != nil {
 		return c.JSON(err.(models.ServError).Code, models.Error{})
 	}
@@ -172,12 +173,13 @@ func (h *handler) ThreadCreate(c echo.Context) error {
 		if err != nil {
 			return c.JSON(err.(models.ServError).Code, models.Error{})
 		}
-		userID, err := h.userStorage.SelectUserID(threadInput.Author)
+
+		userID, err := h.userStorage.SelectUserNickname(threadInput.Author)
 		if err != nil {
 			return c.JSON(err.(models.ServError).Code, models.Error{})
 		}
 
-		forumID, err := h.forumStorage.ForumIDSelect(threadInput.Forum)
+		forumID, err := h.forumStorage.ForumSlugSelect(threadInput.Forum)
 		if err != nil {
 			return c.JSON(err.(models.ServError).Code, models.Error{})
 		}
@@ -330,8 +332,7 @@ func (h *handler) ThreadVote(c echo.Context) error {
 	return c.JSON(http.StatusOK, output)
 }
 
-
-func (h *handler) PostCreate(c echo.Context) error {
+func (h handler) PostCreate(c echo.Context) error {
 	postInput := make([]models.PostCreate, 0)
 
 	err := c.Bind(&postInput)
@@ -340,7 +341,6 @@ func (h *handler) PostCreate(c echo.Context) error {
 	}
 
 	slagOrID := isItSlugOrID(c.Param("slug_or_id"))
-
 	posts := make([]models.Post, 0)
 
 	forum, err := h.forumStorage.SelectForumByThread(&slagOrID)
@@ -348,7 +348,6 @@ func (h *handler) PostCreate(c echo.Context) error {
 		if err == pgx.ErrNoRows {
 			return c.JSON(models.NotFound, models.Error{})
 		}
-
 		return c.JSON(models.InternalServerError, models.Error{})
 	}
 
@@ -356,20 +355,19 @@ func (h *handler) PostCreate(c echo.Context) error {
 		return c.JSON(http.StatusCreated, posts)
 	}
 
+	author := postInput[0].Author
 	created := time.Now().Format(time.RFC3339Nano)
 	posts, err = h.forumStorage.PostsCreate(slagOrID, forum, created, postInput)
+
 	if err != nil {
-		if err.(models.ServError).Code == 404 {
+		_, errUser := h.userStorage.SelectUserNickname(author)
+		if errUser != nil {
+			return c.JSON(models.NotFound, models.Error{})
+		}
+		if err.(models.ServError).Code == 409 {
 			return c.JSON(err.(models.ServError).Code, models.Error{})
 		}
-		return c.JSON(err.(models.ServError).Code, models.Error{})
 	}
-
-	err = h.forumStorage.PostsCountUpdate(forum, len(posts))
-	if err != nil {
-		return c.JSON(err.(models.ServError).Code, models.Error{})
-	}
-
 	return c.JSON(http.StatusCreated, posts)
 }
 

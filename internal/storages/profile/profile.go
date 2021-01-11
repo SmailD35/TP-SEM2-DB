@@ -21,6 +21,17 @@ func (s *Storage) SelectUserID(input string) (userID int, err error) {
 	return
 }
 
+func (s *Storage) SelectUserNickname(input string) (nickname string, err error) {
+	query := `SELECT nickname FROM users WHERE nickname = $1`
+	err = s.Db.QueryRow(query, input).Scan(&nickname)
+	if err != nil {
+		return nickname, models.ServError{Code: 500}
+	}
+
+	return
+}
+
+
 func (s *Storage) SelectUserByEmail(email string) (user models.User, err error) {
 	query := `SELECT fullname, nickname, about, email FROM users WHERE email = $1`
 	err = s.Db.QueryRow(query, email).
@@ -57,7 +68,6 @@ func (s *Storage) UserCreate(input models.User) (user models.User, err error) {
 	_, err = s.Db.Exec(query, input.Nickname, input.Email, input.FullName, input.About)
 
 	if pqErr, ok := err.(pgx.PgError); ok {
-		fmt.Println(err)
 		switch pqErr.Code {
 		case pgerrcode.UniqueViolation:
 			fmt.Println(pqErr.Code)
@@ -123,26 +133,28 @@ func (s *Storage) EditUser(input models.User) (user models.User, err error) {
 	return
 }
 
-func (s *Storage) SelectAllUsers(input models.ForumQueryParams, forumID int) (users []models.User, err error) {
+func (s *Storage) SelectAllUsers(input models.ForumQueryParams, forum string) (users []models.User, err error) {
 	var rows *pgx.Rows
 	users = make([]models.User, 0)
 
 	var query string
 	if input.Since == "" && !input.Desc {
-		query = "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.userID = u.ID WHERE fu.forumID = $1 ORDER BY u.nickname LIMIT $2"
-		rows, err = s.Db.Query(query, forumID, input.Limit)
+		// fu.nickname = u.nickname where fu.forum
+		query = "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.nickname = u.nickname where fu.forum = $1 ORDER BY u.nickname LIMIT $2"
+		rows, err = s.Db.Query(query, forum, input.Limit)
 	} else if input.Since == "" && input.Desc {
-		query = "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.userID = u.ID WHERE fu.forumID = $1 ORDER BY u.nickname DESC LIMIT $2"
-		rows, err = s.Db.Query(query, forumID, input.Limit)
+		query = "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.nickname = u.nickname where fu.forum = $1 ORDER BY u.nickname DESC LIMIT $2"
+		rows, err = s.Db.Query(query, forum, input.Limit)
 	}  else if input.Since != "" && !input.Desc {
-		query = "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.userID = u.ID WHERE fu.forumID = $1 AND u.nickname > $2 ORDER BY u.nickname LIMIT $3"
-		rows, err = s.Db.Query(query, forumID, input.Since, input.Limit)
+		query = "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.nickname = u.nickname where fu.forum = $1 AND u.nickname > $2 ORDER BY u.nickname LIMIT $3"
+		rows, err = s.Db.Query(query, forum, input.Since, input.Limit)
 	} else if input.Since != "" && input.Desc {
-		query =  "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.userID = u.ID WHERE fu.forumID = $1 AND u.nickname < $2 ORDER BY u.nickname DESC LIMIT $3"
-		rows, err = s.Db.Query(query, forumID, input.Since, input.Limit)
+		query =  "SELECT u.nickname, u.fullname, u.about, u.email FROM forum_users fu JOIN users u ON fu.nickname = u.nickname where fu.forum = $1 AND u.nickname < $2 ORDER BY u.nickname DESC LIMIT $3"
+		rows, err = s.Db.Query(query, forum, input.Since, input.Limit)
 	}
 
 	if err != nil {
+		fmt.Println(err)
 		return users, models.ServError{Code: 500}
 	}
 

@@ -2,12 +2,9 @@ package forum
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx"
 	"github.com/SmailD35/TP-SEM2-DB/internal/models"
-	"strconv"
+	"github.com/jackc/pgx"
 	"strings"
 )
 
@@ -39,8 +36,8 @@ func (s *Storage) PostsCountUpdate(input string, posts int) (err error) {
 	return
 }
 
-func (s *Storage) NewForumUser(userID int, forumID int) (err error) {
-	_, err = s.Db.Exec("INSERT INTO forum_users (forumID, userID) VALUES ($1, $2)", forumID, userID)
+func (s *Storage) NewForumUser(user string, forum string) (err error) {
+	_, err = s.Db.Exec("INSERT INTO forum_users (forum, nickname) VALUES ($1, $2)", forum, user)
 	return
 }
 
@@ -52,6 +49,11 @@ func (s *Storage) IfForumExists(input string) (err error) {
 
 func (s Storage) ForumIDSelect(input string) (ID int, err error) {
 	err = s.Db.QueryRow("SELECT ID from forums WHERE slug = $1", input).Scan(&ID)
+	return
+}
+
+func (s Storage) ForumSlugSelect(input string) (slug string, err error) {
+	err = s.Db.QueryRow("SELECT slug from forums WHERE slug = $1", input).Scan(&slug)
 	return
 }
 
@@ -253,6 +255,63 @@ func (s *Storage) CheckIfUserVoted(vote models.Vote) (thread models.Thread, nonC
 }
 
 func (s Storage) PostsCreate(thread models.ThreadSlagOrID, forum string, created string, posts []models.PostCreate) (post []models.Post, err error) {
+	query := `INSERT INTO posts(
+                 author,
+                 created,
+                 message,
+                 parent,
+				 thread,
+				 forum) VALUES `
+	data := make([]models.Post, 0, 0)
+	if len(posts) == 0 {
+		return data, nil
+	}
+
+
+	var valNam []string
+	var values []interface{}
+	i := 1
+	for _, element := range posts {
+		valNam = append(valNam, fmt.Sprintf(
+			"($%d, $%d, $%d, $%d, $%d, $%d)",
+			i, i+1, i+2, i+3, i+4, i+5))
+		i += 6
+		values = append(values, element.Author, created, element.Message, element.Parent, thread.ThreadID, forum)
+	}
+
+	query += strings.Join(valNam[:], ",")
+	query += " RETURNING  id, parent, thread, forum, author, created, message, edited"
+	row, err := s.Db.Query(query, values...)
+	if err != nil {
+		fmt.Println(err)
+		return data, err
+	}
+
+	defer func() {
+		if row != nil {
+			row.Close()
+		}
+	}()
+
+	for row.Next() {
+		scanPost := models.Post{}
+		// id, parent, thread, forum, author, created, message, edited
+		err = row.Scan(&scanPost.ID, &scanPost.Parent, &scanPost.ThreadID, &scanPost.Forum,  &scanPost.Author, &scanPost.Created,&scanPost.Message, &scanPost.IsEdited)
+
+		if err != nil {
+			fmt.Println(err)
+			return data, err
+		}
+		data = append(data, scanPost)
+	}
+
+	if len(data) == 0 {
+		return data, models.ServError{Code: 409}
+	}
+	return data, err
+}
+/*
+func (s Storage) PostsCreate(thread models.ThreadSlagOrID, forum string, created string, posts []models.PostCreate) (post []models.Post, err error) {
 	sqlStr := "INSERT INTO posts(id, parent, thread, forum, author, created, message, path) VALUES "
 	vals := []interface{}{}
 	for _, post := range posts {
@@ -347,7 +406,7 @@ func ReplaceSQL(old, searchPattern string) string {
 		old = strings.Replace(old, searchPattern, "$"+strconv.Itoa(m), 1)
 	}
 	return old
-}
+}*/
 
 func (s *Storage) SelectPost(input int, post *models.Post) (err error) {
 	query := `SELECT author, created, forum, message, ID , edited, parent, thread FROM posts WHERE ID = $1`
